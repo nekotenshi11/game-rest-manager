@@ -1,0 +1,7 @@
+# ข้อมูลส่วนตัวของแต่ละเครื่อง: ห้ามขึ้น GitHub เด็ดขาด
+data.json
+profiles/
+events.log
+events.log.old
+*.new
+*.zip
