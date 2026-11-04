@@ -18,7 +18,7 @@ const STATS = fs.readFileSync(path.join(ROOT, 'stats.js'), 'utf8');
 const AUTOLOGIN = fs.readFileSync(path.join(ROOT, 'autologin.js'), 'utf8');
 const POLL_EXPR =
   'window.__gameRest&&Object.assign(window.__gameRest.info(),' +
-  '{hidden:document.hidden,life:window.__grLife||null,' +
+  '{hidden:document.hidden,life:window.__grLife||null,restore:window.__grRestore?window.__grRestore.last:null,' +
   'screen:([[".hud-status","ในเกม"],[".reconnecting","กำลังเชื่อมต่อใหม่"],[".two-step","ยืนยัน 2 ขั้น"],' +
   '[".char-select","เลือกตัวละคร"],["form.login-card","หน้าล็อกอิน"]].find(x=>document.querySelector(x[0]))||[0,"อื่นๆ"])[1],' +
   'stats:typeof window.__gameRestStats==="function"?window.__gameRestStats():null})';
@@ -41,7 +41,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ---------- ข้อมูลที่บันทึกไว้ ----------
 const DEFAULT_DATA = {
-  settings: { idleSec: 30, fps: 1, mute: true, stallMin: 5, trimMin: 5, edgePath: '' },
+  settings: { idleSec: 30, fps: 1, mute: true, stallMin: 5, trimBelowGB: 2, edgePath: '' },
   profiles: {},   // ชื่อโปรไฟล์ -> { dir, port }
   accounts: []    // { id, name, profile, url, auto, targetId }
 };
@@ -55,6 +55,7 @@ function load() {
   }
 }
 const data = load();
+delete data.settings.trimMin; // ค่าเก่า: เปลี่ยนจากคืนตามเวลาเป็นคืนตาม RAM ว่าง (trimBelowGB)
 
 let saveTimer = null;
 function save() {
@@ -235,6 +236,7 @@ class GamePage {
         out.hidden = !!v.hidden;
         out.screen = v.screen;
         out.life = v.life;
+        out.restore = v.restore;
         out.stats = v.stats;
       }
     }
@@ -375,11 +377,6 @@ async function openAccount(acc) {
   const rt = rtOf(acc);
   rt.status = 'starting';
   rt.error = '';
-  // กดเปิดเกมเอง = ให้ลองล็อกอินอัตโนมัติใหม่
-  rt.loginBlocked = null;
-  rt.loginAttempts = [];
-  rt.loginSubmitted = false;
-  rt.loginSubmitAt = 0;
   try {
     const b = getBrowser(acc.profile);
     const launched = await b.ensure(true);
@@ -406,7 +403,7 @@ async function openAccount(acc) {
   }
 }
 
-// ---------- ล็อกอินอัตโนมัติ ----------
+// ---------- ใส่รหัสในหน้าล็อกอินให้ (ผู้เล่นกดเข้าเกมเอง) ----------
 const passCache = new Map(); // acc.id -> { enc, pass }
 async function getPassword(acc) {
   const enc = acc.login?.passEnc;
@@ -422,63 +419,43 @@ const LOGIN_MESSAGES = {
   reconnecting: 'เกมกำลังเชื่อมต่อใหม่เอง… รอก่อน',
   twostep: '⚠ ต้องใส่รหัสยืนยัน 2 ขั้นเองที่หน้าเกม',
   'register-mode': '⚠ หน้าเกมอยู่ที่หน้าสมัครบัญชี — กดกลับไปหน้าเข้าสู่ระบบ',
+  filled: '🔑 ใส่รหัสให้แล้ว — กด "เข้าเกม" เองที่หน้าเกม',
+  'char-select': 'เลือกตัวละครเองที่หน้าเกม',
   other: 'กำลังรอหน้าล็อกอิน…'
 };
-const LOGIN_LIMIT = 3;              // ล็อกอินได้ไม่เกิน 3 ครั้ง
-const LOGIN_WINDOW_MS = 10 * 60000; // ใน 10 นาที
-const LOGIN_HOLD_MS = 15000;        // กดล็อกอินแล้วรอผล 15 วิ ก่อนลองใหม่
 
 async function loginTick(acc, page, rt, stats) {
   const L = acc.login;
-  if (!L?.auto || !L.user || !L.passEnc || !stats) {
+  if (!L?.auto || !L.user || !L.passEnc || !stats || stats.inGame) {
     rt.loginMsg = '';
     return;
   }
-  if (stats.inGame) {
-    rt.loginMsg = '';
-    rt.loginBlocked = null;
-    rt.loginSubmitted = false;
-    return;
-  }
-  if (rt.loginBlocked) {
-    rt.loginMsg = rt.loginBlocked;
-    return;
-  }
-  const now = Date.now();
-  rt.loginAttempts = (rt.loginAttempts || []).filter((t) => now - t < LOGIN_WINDOW_MS);
   const pass = await getPassword(acc);
-  const cfg = {
-    user: L.user,
-    pass,
-    submitted: !!rt.loginSubmitted,
-    holdLogin: now - (rt.loginSubmitAt || 0) < LOGIN_HOLD_MS || rt.loginAttempts.length >= LOGIN_LIMIT
-  };
+  const cfg = { user: L.user, pass };
   const r = await page.evalTop(`window.__gameRestLogin&&window.__gameRestLogin(${JSON.stringify(cfg)})`).catch(() => null);
-  if (!r) return;
-  switch (r.state) {
-    case 'submitted':
-      logEvent(acc.name, 'ล็อกอินอัตโนมัติ: กดเข้าเกม');
-      rt.loginSubmitted = true;
-      rt.loginSubmitAt = now;
-      rt.loginAttempts.push(now);
-      rt.loginMsg = 'กำลังล็อกอิน…';
-      break;
-    case 'filled':
-    case 'logging-in':
-      rt.loginMsg = rt.loginAttempts.length >= LOGIN_LIMIT && !rt.loginSubmitted
-        ? '⚠ ล็อกอินครบ 3 ครั้งใน 10 นาทีแล้ว — รอสักพัก หรือกด "เปิดเกม" เพื่อลองใหม่'
-        : 'กำลังล็อกอิน…';
-      break;
-    case 'login-error':
-      rt.loginBlocked = '⚠ ล็อกอินไม่สำเร็จ: ' + r.msg + ' — หยุดล็อกอินอัตโนมัติแล้ว ตรวจรหัสแล้วกด "เปิดเกม"';
-      rt.loginMsg = rt.loginBlocked;
-      break;
-    case 'char-select':
-      rt.loginSubmitted = false;
-      rt.loginMsg = '✓ ล็อกอินแล้ว — เลือกตัวละครเองที่หน้าเกม';
-      break;
-    default:
-      rt.loginMsg = LOGIN_MESSAGES[r.state] || '';
+  if (r) rt.loginMsg = LOGIN_MESSAGES[r.state] || '';
+}
+
+// ปิด Edge ทั้งโปรไฟล์แล้วเปิดจอเดิมกลับมา เพื่อคืนหน่วยความจำที่สะสมตามเวลา
+async function restartProfile(name) {
+  const b = browsers.get(name);
+  if (!b?.cdp || b.restarting) return;
+  b.restarting = true;
+  try {
+    const accounts = data.accounts.filter((a) => a.profile === name && pageOf(a)?.top);
+    logEvent('โปรไฟล์ ' + name, `เปิด Edge ใหม่ (${accounts.length} จอ, ส่วนการ์ดจอจอง ${Math.round(b.gpuMB || 0)} MB)`);
+    await b.cdp.send('Browser.close').catch(() => {});
+    for (let i = 0; i < 40; i++) {
+      await sleep(500);
+      if (!b.cdp && !(await b.version().catch(() => null))) break;
+    }
+    b.gpuMB = 0;
+    for (const acc of accounts) {
+      await openAccount(acc);
+      await sleep(2000);
+    }
+  } finally {
+    b.restarting = false;
   }
 }
 
@@ -508,10 +485,13 @@ async function trimProfile(name) {
   logEvent('โปรไฟล์ ' + name, `คืน RAM (ก่อนคืน ${before} MB)`);
 }
 
-// คืน RAM อัตโนมัติ: เฉพาะโปรไฟล์ที่ทุกจอพักอยู่หรือถูกย่อ (คืนตอนมีจอกำลังเล่นจะทำให้จอนั้นกระตุก)
+// คืน RAM อัตโนมัติ: เฉพาะตอน RAM ว่างทั้งเครื่องต่ำกว่าที่ตั้งไว้ และเฉพาะโปรไฟล์ที่ทุกจอพักอยู่หรือถูกย่อ
+// (คืนตอนมีจอกำลังเล่นจะทำให้จอนั้นกระตุก) เริ่มจากโปรไฟล์ที่ใช้ RAM มากสุด แล้วหยุดทันทีที่ RAM ว่างพอ
+const TRIM_IDLE_MS = 30000;
+const TRIM_COOLDOWN_MS = 5 * 60000;
 async function autoTrimTick() {
-  const s = data.settings;
-  if (!(s.trimMin > 0)) return;
+  const limitBytes = data.settings.trimBelowGB * 1024 ** 3;
+  const candidates = [];
   for (const [name, b] of browsers) {
     if (!b.cdp) continue;
     const open = data.accounts.filter((a) => a.profile === name && pageOf(a)?.top);
@@ -522,9 +502,14 @@ async function autoTrimTick() {
       continue;
     }
     b.idleSince ??= Date.now();
-    // รอ 30 วิหลังพักครบก่อนคืนครั้งแรก แล้วคืนซ้ำทุก trimMin นาที
-    if (Date.now() - b.idleSince < 30000) continue;
-    if (b.lastTrimAt && b.lastTrimAt > b.idleSince && Date.now() - b.lastTrimAt < s.trimMin * 60000) continue;
+    if (Date.now() - b.idleSince < TRIM_IDLE_MS) continue;
+    if (Date.now() - (b.lastTrimAt || 0) < TRIM_COOLDOWN_MS) continue;
+    candidates.push([name, b]);
+  }
+  candidates.sort((x, y) => y[1].ramMB - x[1].ramMB);
+  for (const [name] of candidates) {
+    if (!(limitBytes > 0) || os.freemem() >= limitBytes) return;
+    logEvent('โปรไฟล์ ' + name, `RAM ว่างเหลือ ${Math.round(os.freemem() / 1048576)} MB ต่ำกว่าที่ตั้งไว้`);
     await trimProfile(name);
   }
 }
@@ -535,6 +520,7 @@ async function reconcile() {
   const names = new Set(data.accounts.map((a) => a.profile));
   for (const name of names) {
     const b = getBrowser(name);
+    if (b.restarting) continue;
     try { await b.ensure(false); } catch { continue; }
     let infos;
     try { ({ targetInfos: infos } = await b.cdp.send('Target.getTargets')); } catch { continue; }
@@ -603,6 +589,15 @@ async function tick() {
     } else if (rt.lastResumedAt === undefined) {
       rt.lastResumedAt = resumedAt;
     }
+    if (info.restore && info.restore.at !== rt.lastRestoreAt) {
+      rt.lastRestoreAt = info.restore.at;
+      const r = info.restore;
+      const trimAt = browsers.get(acc.profile)?.lastTrimAt;
+      logEvent(acc.name, `เปิดจอกลับหลังซ่อน ${Math.round(r.hiddenMs / 60000)} นาที: เกมหน่วงรวม ${r.total} ms ` +
+        `(${r.count} ครั้ง ยาวสุด ${r.max} ms) · ` +
+        (s.trimBelowGB > 0 ? `คืน RAM เมื่อว่างต่ำกว่า ${s.trimBelowGB} GB` : 'คืน RAM อัตโนมัติปิดอยู่') +
+        (trimAt ? ` · คืน RAM ล่าสุด ${Math.round((Date.now() - trimAt) / 60000)} นาทีก่อน` : ''));
+    }
     const snap = [info.screen, info.hidden, page.resting, rt.disconnected, rt.stalled].join('|');
     if (snap !== rt.lastSnap) {
       rt.lastSnap = snap;
@@ -665,6 +660,7 @@ async function processTick() {
       if (b.cpuPrev) b.cpu = Math.max(0, (total - b.cpuPrev.t) / ((now - b.cpuPrev.w) / 1000) / CORES * 100);
       b.cpuPrev = { t: total, w: now };
       b.pids = processInfo.map((p) => p.id);
+      b.gpuPids = processInfo.filter((p) => /gpu/i.test(p.type)).map((p) => p.id);
       b.ramMB = b.pids.reduce((sum, id) => sum + (mem.get(id) || 0), 0) / 1024;
     } catch {}
   }
@@ -681,6 +677,27 @@ async function updateTick() {
   } catch (e) {
     logEvent('อัปเดต', 'เช็กอัปเดตไม่สำเร็จ: ' + e.message);
   }
+}
+
+// จดหน่วยความจำที่ส่วนการ์ดจอของแต่ละโปรไฟล์จองไว้ ดูว่าโตเร็วแค่ไหน
+function gpuTick() {
+  const active = [...browsers.entries()].filter(([, b]) => b.cdp && b.gpuPids?.length);
+  if (!active.length) return Promise.resolve();
+  const ids = active.flatMap(([, b]) => b.gpuPids).join(',');
+  const ps = `Get-Process -Id ${ids} -ErrorAction SilentlyContinue | ForEach-Object { "$($_.Id) $($_.PagedMemorySize64)" }`;
+  return new Promise((resolve) => {
+    execFile('powershell', ['-NoProfile', '-NonInteractive', '-Command', ps], { windowsHide: true }, (err, out) => {
+      const bytes = new Map(String(out).trim().split(/\r?\n/).map((l) => l.split(' ').map(Number)));
+      for (const [name, b] of active) {
+        const mb = b.gpuPids.reduce((sum, id) => sum + (bytes.get(id) || 0), 0) / 1048576;
+        if (mb > 0) {
+          b.gpuMB = mb;
+          logEvent('โปรไฟล์ ' + name, `ส่วนการ์ดจอจอง ${Math.round(mb)} MB`);
+        }
+      }
+      resolve();
+    });
+  });
 }
 
 function loop(fn, ms) {
@@ -709,7 +726,7 @@ function state() {
   const names = [...new Set(data.accounts.map((a) => a.profile))];
   const profiles = names.map((name) => {
     const b = browsers.get(name);
-    return { name, running: !!b?.cdp, cpu: b?.cpu || 0, ramMB: b?.ramMB || 0, lastTrimAt: b?.lastTrimAt || 0 };
+    return { name, running: !!b?.cdp, cpu: b?.cpu || 0, ramMB: b?.ramMB || 0, gpuMB: b?.gpuMB || 0, restarting: !!b?.restarting, lastTrimAt: b?.lastTrimAt || 0 };
   });
   return {
     settings: data.settings,
@@ -722,7 +739,8 @@ function state() {
       stalled: accounts.filter((a) => a.stalled).length,
       resting: accounts.filter((a) => a.resting).length,
       cpu: profiles.reduce((s, p) => s + p.cpu, 0),
-      ramMB: profiles.reduce((s, p) => s + p.ramMB, 0)
+      ramMB: profiles.reduce((s, p) => s + p.ramMB, 0),
+      freeMB: os.freemem() / 1048576
     }
   };
 }
@@ -758,7 +776,7 @@ async function handleApi(req, res, parts) {
     if (body.fps != null) s.fps = Math.min(30, Math.max(0.2, Number(body.fps) || 1));
     if (body.mute != null) s.mute = !!body.mute;
     if (body.stallMin != null) s.stallMin = Math.max(0, Number(body.stallMin) || 0);
-    if (body.trimMin != null) s.trimMin = Math.max(0, Number(body.trimMin) || 0);
+    if (body.trimBelowGB != null) s.trimBelowGB = Math.max(0, Number(body.trimBelowGB) || 0);
     save();
     // ใช้ fps ใหม่กับจอที่พักอยู่
     for (const acc of data.accounts) {
@@ -771,6 +789,11 @@ async function handleApi(req, res, parts) {
   if (kind === 'all') {
     const on = id === 'rest';
     await Promise.all(data.accounts.map((a) => pageOf(a)?.setRest(on)));
+    return sendJSON(res, 200, state());
+  }
+
+  if (kind === 'profiles' && action === 'restart') {
+    restartProfile(decodeURIComponent(id)).catch((e) => logEvent('โปรไฟล์', 'เปิด Edge ใหม่ไม่สำเร็จ: ' + e.message));
     return sendJSON(res, 200, state());
   }
 
@@ -813,9 +836,6 @@ async function handleApi(req, res, parts) {
       const passEnc = body.pass ? await encrypt(String(body.pass)) : prev.passEnc;
       if (!passEnc) return sendJSON(res, 400, { error: 'ใส่รหัสผ่าน' });
       acc.login = { user, passEnc, auto: body.auto !== false };
-      const rt = rtOf(acc);
-      rt.loginBlocked = null;
-      rt.loginAttempts = [];
       save();
       break;
     }
@@ -866,5 +886,6 @@ server.listen(PORT, '127.0.0.1', () => {
   loop(processTick, 3000);
   loop(autoTrimTick, 10000);
   loop(keepAwakeTick, 5000);
+  setTimeout(() => loop(gpuTick, 5 * 60000), 10000);
   setTimeout(() => loop(updateTick, 30 * 60000), 5000);
 });

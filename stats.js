@@ -10,6 +10,33 @@ window.__gameRestStats = (() => {
     document.addEventListener('resume', () => { window.__grLife.resumedAt = Date.now(); });
   }
 
+  // วัดความหน่วงตอนเปิดจอกลับมา: รวมงานที่บล็อกหน้าเกมเกิน 50 ms ในช่วง 30 วิแรก
+  if (!window.__grRestore) {
+    const restore = window.__grRestore = { hiddenAt: document.hidden ? Date.now() : 0, last: null };
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        restore.hiddenAt = Date.now();
+        return;
+      }
+      const hiddenMs = restore.hiddenAt ? Date.now() - restore.hiddenAt : 0;
+      let total = 0;
+      let max = 0;
+      let count = 0;
+      const observer = new PerformanceObserver((list) => {
+        for (const e of list.getEntries()) {
+          total += e.duration;
+          max = Math.max(max, e.duration);
+          count++;
+        }
+      });
+      observer.observe({ entryTypes: ['longtask'] });
+      setTimeout(() => {
+        observer.disconnect();
+        restore.last = { at: Date.now(), hiddenMs, total: Math.round(total), max: Math.round(max), count };
+      }, 30000);
+    });
+  }
+
   // อ่านข้อมูลกระเป๋า/ตัวละครที่ HUD ของเกมถืออยู่ (ผ่าน React fiber) => น้ำหนัก/Zeny แบบเรียลไทม์
   function hudData(hud) {
     const key = Object.keys(hud).find((k) => k.startsWith('__reactFiber$'));

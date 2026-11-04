@@ -69,8 +69,12 @@
   function setAudio(off) {
     for (const c of audioCtxs) {
       try {
-        if (off && c.state === 'running') { c.__grS = 1; c.suspend(); }
-        else if (!off && c.__grS) { c.__grS = 0; c.resume(); }
+        if (off && c.state === 'running') { c.__grS = 1; c.suspend().catch(() => {}); }
+        else if (!off && c.__grS) {
+          c.__grS = 0;
+          // เกมอาจปิด AudioContext ไปแล้วระหว่างพัก
+          if (c.state !== 'closed') c.resume().catch(() => {});
+        }
       } catch {}
     }
     for (const m of document.querySelectorAll('audio,video')) {

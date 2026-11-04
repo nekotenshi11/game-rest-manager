@@ -40,7 +40,8 @@ function main() {
     console.log('ไม่มีอะไรเปลี่ยน ไม่ต้องส่ง');
     return;
   }
-  git('commit', '-m', `อัปเดตเวอร์ชัน ${version}`);
+  const trailer = process.env.COMMIT_TRAILER ? `\n\n${process.env.COMMIT_TRAILER}` : '';
+  git('commit', '-m', `อัปเดตเวอร์ชัน ${version}${trailer}`);
   console.log('กำลังส่งขึ้น GitHub… (ครั้งแรกจะมีหน้าต่างให้ล็อกอิน GitHub)');
   git('push', '-u', 'origin', 'main');
 
