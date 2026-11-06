@@ -395,7 +395,7 @@ async function openAccount(acc) {
     }
     await b.attach(acc);
     await pageOf(acc)?.setRest(false);
-    await b.cdp.send('Target.activateTarget', { targetId: acc.targetId }).catch(() => {});
+    await revealWindow(acc).catch(() => {});
     rt.status = 'open';
   } catch (e) {
     rt.status = pageOf(acc) ? 'open' : 'closed';
@@ -464,10 +464,19 @@ async function revealWindow(acc) {
   const b = browsers.get(acc.profile);
   if (!b?.cdp || !acc.targetId) return;
   const { windowId, bounds } = await b.cdp.send('Browser.getWindowForTarget', { targetId: acc.targetId });
-  if (bounds?.windowState === 'minimized') {
-    await b.cdp.send('Browser.setWindowBounds', { windowId, bounds: { windowState: 'normal' } });
-  }
+  const setState = (windowState) => b.cdp.send('Browser.setWindowBounds', { windowId, bounds: { windowState } });
+  if (bounds?.windowState === 'minimized') await setState('normal');
   await b.cdp.send('Target.activateTarget', { targetId: acc.targetId });
+  await sleep(300);
+  // Windows มักไม่ยอมให้โปรแกรมดึงหน้าต่างขึ้นหน้าสุดตรงๆ: ถ้ายังไม่ได้โฟกัส ให้พับแล้วคืนเพื่อดันขึ้นมา
+  const focused = await pageOf(acc)?.evalTop('document.hasFocus()').catch(() => false);
+  if (!focused) {
+    const restoreTo = bounds?.windowState === 'maximized' ? 'maximized' : 'normal';
+    await setState('minimized');
+    await sleep(150);
+    await setState(restoreTo);
+    await b.cdp.send('Target.activateTarget', { targetId: acc.targetId });
+  }
 }
 
 async function closeAccount(acc) {
