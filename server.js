@@ -831,6 +831,17 @@ async function handleApi(req, res, parts) {
     return sendJSON(res, 200, state());
   }
 
+  if (kind === 'reorder') {
+    const rank = new Map((Array.isArray(body.ids) ? body.ids : []).map((x, i) => [x, i]));
+    // รับเฉพาะรายการที่ครบทุกบัญชี กันลำดับเก่าจากหน้าที่เปิดค้างทำบัญชีหาย/สลับผิด
+    if (rank.size !== data.accounts.length || !data.accounts.every((a) => rank.has(a.id))) {
+      return sendJSON(res, 400, { error: 'รายการบัญชีเปลี่ยนไปแล้ว ลองกด F5 แล้วทำใหม่' });
+    }
+    data.accounts.sort((x, y) => rank.get(x.id) - rank.get(y.id));
+    save();
+    return sendJSON(res, 200, state());
+  }
+
   if (kind === 'accounts' && !id) {
     const name = String(body.name || '').trim();
     const url = String(body.url || '').trim();
