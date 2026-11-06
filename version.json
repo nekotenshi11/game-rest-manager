@@ -1,14 +1,14 @@
 {
-  "version": 202611042341,
+  "version": 202611070106,
   "files": {
     "cdp.js": "3eac23fc4c9c9738cb581aa0e1df3c4daf9b6cd96fc91c0725c0b4bfa7514c9b",
-    "server.js": "26577bd175b713f62d9196b1ac8c30b55b503a39af5aef18a4d82a0abbe879a9",
+    "server.js": "b8262bc7dfb007ade75ce0a4d5c213b07171791cee9ac45c483d3b6db9ebe7f5",
     "shim.js": "76835ff23bd8895d4a2189f04a55bf39768e1d524791585f69cb64ae65462913",
-    "stats.js": "2552b071438813091896cf1d17aa2b78ec1019e377522cdb4fb6f0436ff713a6",
+    "stats.js": "97db2c3180d632fe1287dcd6709466748950de075298297d6fb4fb75ea2b1017",
     "autologin.js": "fb9344053cbfcb355b3b46b30bd263f7dc4cd7fdf17f0a861401ebd738c022db",
     "secret.js": "fd35853cb4734a7833f927c7db9135413157ee3f828021533d27c5b19ecccdf2",
     "updater.js": "304524e9fea5007debd02b6bdde1be28dd6094342004190f54cffaf4d7284bcf",
-    "index.html": "ea011aad569f77d0b74519eee87c46897e3413dea3401d563f82254b648fcc45",
+    "index.html": "0173dfba51ab100b2df6b09c5878d3de8ef9ec68fb297bcef0ed705e03423771",
     "start.bat": "909607a3a2af03b9996309436c12d15dbaa0e4dbca2c346bae46d3de2fa051e6"
   }
 }

@@ -459,6 +459,17 @@ async function restartProfile(name) {
   }
 }
 
+// เอาหน้าต่างของบัญชีนี้ขึ้นมาให้เห็น (ถ้าถูกย่อไว้จะคืนขนาดก่อน)
+async function revealWindow(acc) {
+  const b = browsers.get(acc.profile);
+  if (!b?.cdp || !acc.targetId) return;
+  const { windowId, bounds } = await b.cdp.send('Browser.getWindowForTarget', { targetId: acc.targetId });
+  if (bounds?.windowState === 'minimized') {
+    await b.cdp.send('Browser.setWindowBounds', { windowId, bounds: { windowState: 'normal' } });
+  }
+  await b.cdp.send('Target.activateTarget', { targetId: acc.targetId });
+}
+
 async function closeAccount(acc) {
   const b = browsers.get(acc.profile);
   if (b?.cdp && acc.targetId) await b.cdp.send('Target.closeTarget', { targetId: acc.targetId }).catch(() => {});
@@ -546,6 +557,7 @@ async function tick() {
       rt.offSince = null;
       rt.stalled = false;
       rt.sig = null;
+      rt.humanCheck = null;
       return;
     }
     rt.status = 'open';
@@ -568,7 +580,14 @@ async function tick() {
       }
       rt.stalled = s.stallMin > 0 && Date.now() - rt.sigSince > s.stallMin * 60000;
     }
-    const problem = rt.disconnected || rt.stalled;
+    // เกมขึ้นเช็คผู้เล่น: ปลุกจอและเปิดหน้าต่างให้เห็น 1 ครั้งต่อคำถาม ไม่ตอบแทน
+    const humanCheck = info.stats?.humanCheck || null;
+    if (humanCheck && !rt.humanCheck) {
+      logEvent(acc.name, '⚠ เกมขึ้นเช็คผู้เล่น: ' + humanCheck.meta);
+      revealWindow(acc).catch(() => {});
+    }
+    rt.humanCheck = humanCheck;
+    const problem = rt.disconnected || rt.stalled || humanCheck;
     if (info.wake || (problem && page.resting)) {
       await page.setRest(false);
     } else if (page.resting === null && info.resting !== null) {
@@ -718,6 +737,7 @@ function state() {
       cpu: rt.cpu, heapMB: rt.heapMB, error: rt.error, stats: rt.stats || null,
       disconnected: !!rt.disconnected,
       stalled: !!rt.stalled && !rt.disconnected,
+      humanCheck: rt.humanCheck || null,
       // ไม่ส่งรหัสผ่านออกไปหน้าควบคุมเด็ดขาด
       login: a.login ? { user: a.login.user, auto: !!a.login.auto, hasPass: !!a.login.passEnc } : null,
       loginMsg: rt.loginMsg || ''

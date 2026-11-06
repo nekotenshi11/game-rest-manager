@@ -56,6 +56,7 @@ window.__gameRestStats = (() => {
 
   // อ่านค่าสถานะจาก HUD ของ Aetheria Online (ถ้าอ่านจาก React ไม่ได้ จะใช้ค่าจากหน้าต่างกระเป๋าล่าสุดแทน)
   const lastSeen = {};
+  const itemNames = new Map();
   function readStats() {
     if (!isTop || !/(^|\.)aetheria-online\.in\.th$/.test(location.hostname)) return null;
     const hud = document.querySelector('.hud-status');
@@ -80,6 +81,27 @@ window.__gameRestStats = (() => {
         const n = (x) => Math.round(x).toLocaleString('en-US');
         lastSeen.weight = { text: n(inv.weight) + '/' + n(inv.weightLimit), pct: inv.weight / inv.weightLimit * 100 };
       }
+      if (char && Array.isArray(char.buffs)) {
+        // VIP ของเกมนี้คือบัพ Premium (ui:token) ไม่มีบัพนี้ = ไม่มี Premium
+        lastSeen.premiumEndsAt = char.buffs.find((b) => b.skillId === 'ui:token')?.endsAt || 0;
+      }
+      if (char && inv) {
+        // ของในแถบไอเทม + ของที่ลากไว้ในคีย์ลัด 1-9 (ชื่อจำไว้ เผื่อของหมดจนไม่อยู่ในกระเป๋า)
+        const ids = [...(char.itemBar || []), ...(char.hotbar || []).map((h) => (h?.type === 'item' ? h.itemId : null))];
+        // ของที่หมดไม่มีชื่อในข้อมูลกระเป๋า: เดาจากชื่อไฟล์ไอคอนในแถบไอเทม เช่น berserk-potion => Berserk Potion
+        const slots = document.querySelectorAll('.itembar .hot-slot');
+        (char.itemBar || []).forEach((id, i) => {
+          const slug = slots[i]?.querySelector('img')?.src.match(/\/([\w-]+)\.webp/)?.[1];
+          if (id != null && slug && !itemNames.has(id)) {
+            itemNames.set(id, slug.split('-').map((w) => w[0].toUpperCase() + w.slice(1)).join(' '));
+          }
+        });
+        lastSeen.items = [...new Set(ids.filter((id) => id != null))].map((id) => {
+          const stacks = (inv.items || []).filter((it) => it.itemId === id);
+          if (stacks[0]?.name) itemNames.set(id, stacks[0].name);
+          return { name: itemNames.get(id) || '#' + id, qty: stacks.reduce((sum, it) => sum + it.qty, 0) };
+        });
+      }
     } catch {}
     const auto = document.querySelector('.auto-toggle');
     return {
@@ -95,6 +117,12 @@ window.__gameRestStats = (() => {
       heavy: txt('.hud-heavy', hud),
       zeny: lastSeen.zeny || null,
       weight: lastSeen.weight || null,
+      // หน้าเช็คผู้เล่นของเกม: แค่อ่านไปเตือน ผู้เล่นต้องตอบเอง
+      humanCheck: document.querySelector('.human-check')
+        ? { prompt: txt('.human-check-prompt'), meta: txt('.human-check-meta') }
+        : null,
+      premiumEndsAt: lastSeen.premiumEndsAt,
+      items: lastSeen.items || null,
       map: document.title.split('·')[0].trim(),
       ch: txt('.minimap-ch').replace('▾', '').trim(),
       auto: auto ? auto.getAttribute('aria-checked') === 'true' : null

@@ -55,6 +55,10 @@ button:disabled{opacity:.5;cursor:default}
 .sb .t{height:6px;border-radius:9px;background:var(--soft);overflow:hidden}
 .sb .f{height:100%;border-radius:9px}
 .warn{color:#d97706;font-size:12px;margin-top:6px}
+.extra{font-size:12px;color:var(--mu);margin-top:6px;line-height:1.9}
+.extra b{color:var(--tx);font-variant-numeric:tabular-nums}
+.item-chip{background:var(--soft);border-radius:6px;padding:1px 6px;white-space:nowrap}
+.extra .low,.extra .low b{color:var(--bad)}
 .loginline{font-size:12px;color:var(--mu);margin-top:6px}
 .loginmsg{font-size:12px;margin-top:4px;color:var(--pri)}
 .loginmsg.bad{color:var(--bad)}
@@ -161,6 +165,7 @@ function fmt(n, d = 0) {
 function badge(a) {
   if (a.status === 'starting') return '<span class="badge starting">กำลังเปิด…</span>';
   if (a.status !== 'open') return '<span class="badge">ปิดอยู่</span>';
+  if (a.humanCheck) return '<span class="badge off">🚨 เช็คผู้เล่น</span>';
   if (a.disconnected) return '<span class="badge off">⚠ หลุด / หน้าล็อกอิน</span>';
   if (a.stalled) return '<span class="badge off">⚠ ค่าไม่ขยับ (อาจค้าง)</span>';
   if (a.resting) return '<span class="badge rest">💤 พักอยู่</span>';
@@ -171,6 +176,23 @@ function sbar(label, b, color, fallback) {
   const pct = b ? Math.min(100, b.pct) : 0;
   return `<div class="sb"><div class="l"><span>${label}</span><b>${b ? esc(b.text) : fallback || '—'}</b></div>
     <div class="t"><div class="f" style="width:${pct}%;background:${color}"></div></div></div>`;
+}
+
+function premiumLine(endsAt) {
+  if (endsAt === undefined) return '';
+  if (!endsAt || endsAt <= Date.now()) return '<div class="extra"><span>Premium</span> <b class="low">ไม่มี / หมดแล้ว</b></div>';
+  const hours = (endsAt - Date.now()) / 3600000;
+  const left = hours >= 24 ? `${Math.floor(hours / 24)} วัน ${Math.floor(hours % 24)} ชม.`
+    : hours >= 1 ? `${Math.floor(hours)} ชม. ${Math.floor(hours * 60 % 60)} นาที` : `${Math.ceil(hours * 60)} นาที`;
+  const until = new Date(endsAt).toLocaleString('th-TH', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' });
+  return `<div class="extra"><span>Premium เหลือ</span> <b class="${hours < 24 ? 'low' : ''}">${left}</b> <span>(ถึง ${esc(until)})</span></div>`;
+}
+
+function itemsLine(items) {
+  if (!items) return '';
+  if (!items.length) return '<div class="extra"><span>คีย์ลัด</span> <span>ไม่มีไอเทม</span></div>';
+  return `<div class="extra"><span>คีย์ลัด</span> ${items.map((it) =>
+    `<span class="item-chip${it.qty ? '' : ' low'}">${esc(it.name)} <b>x${fmt(it.qty)}</b></span>`).join(' ')}</div>`;
 }
 
 function statsBlock(s) {
@@ -190,6 +212,8 @@ function statsBlock(s) {
       <div class="sb"><div class="l"><span>Zeny</span><b>${s.zeny ? esc(s.zeny) : '—'}</b></div></div>
       ${sbar('น้ำหนัก', s.weight, s.weight && s.weight.pct >= 90 ? '#e05267' : s.weight && s.weight.pct >= 70 ? '#d97706' : '#4ade80')}
     </div>
+    ${premiumLine(s.premiumEndsAt)}
+    ${itemsLine(s.items)}
     ${dead ? '<div class="warn">☠ ตัวละครตาย</div>' : hpLow ? '<div class="warn">⚠ HP ต่ำ</div>' : ''}
     ${s.auto === false ? '<div class="warn">⚠ AUTO ปิดอยู่</div>' : ''}
     ${s.heavy ? `<div class="warn">⚠ ${esc(s.heavy)}</div>` : ''}
@@ -199,7 +223,7 @@ function statsBlock(s) {
 function card(a) {
   const open = a.status === 'open';
   const id = a.id;
-  return `<div class="card${a.disconnected || a.stalled ? ' off' : ''}">
+  return `<div class="card${a.humanCheck || a.disconnected || a.stalled ? ' off' : ''}">
     <div class="top">
       <div><div class="name">${esc(a.name)}</div><div class="meta">${esc(a.profile)} · ${esc(a.url)}</div></div>
       ${badge(a)}
@@ -223,6 +247,7 @@ function card(a) {
     </div>` : ''}
     ${a.login ? `<div class="loginline">🔑 ${a.login.auto ? 'ใส่รหัสให้' : 'บันทึกรหัสไว้ (ปิดการใส่รหัส)'}: <b>${esc(a.login.user)}</b></div>` : ''}
     ${a.loginMsg ? `<div class="loginmsg${a.loginMsg.startsWith('⚠') ? ' bad' : ''}">${esc(a.loginMsg)}</div>` : ''}
+    ${a.humanCheck ? `<div class="err">🚨 เกมขึ้นเช็คผู้เล่น ต้องตอบเองในหน้าเกม ไม่ตอบหรือผิดครบจะถูกส่งเข้าคุก · ${esc(a.humanCheck.prompt)} · ${esc(a.humanCheck.meta)}</div>` : ''}
     ${a.disconnected ? '<div class="err">เกมไม่ได้อยู่ในแผนที่ — ปลุกจอให้แล้ว กด "เปิด / คืนภาพ" แล้วล็อกอินใหม่ (ค่าด้านล่างเป็นค่าล่าสุดก่อนหลุด)</div>' : ''}
     ${a.stalled ? `<div class="err">เปิด AUTO อยู่ แต่ค่าทุกอย่างไม่ขยับเกิน ${last?.settings.stallMin ?? ''} นาที — ปลุกจอให้แล้ว ลองเปิดดูว่าเกมค้างไหม (ถ้าค้างกด F5)</div>` : ''}
     ${statsBlock(a.stats)}
@@ -233,15 +258,17 @@ function card(a) {
 function render(s) {
   last = s;
   $('ver').textContent = s.version ? 'เวอร์ชัน ' + s.version : '';
-  const off = (s.totals.disconnected || 0) + (s.totals.stalled || 0);
+  const checks = s.accounts.filter((a) => a.humanCheck);
+  const off = (s.totals.disconnected || 0) + (s.totals.stalled || 0) + checks.length;
   const lines = [];
+  if (checks.length) lines.push(`🚨 เช็คผู้เล่น ${checks.length} จอ ตอบเองด่วน: ${checks.map((a) => `${a.stats?.name || a.name} (${a.humanCheck.meta})`).join(', ')}`);
   const dis = s.accounts.filter((a) => a.disconnected).map((a) => a.name);
   const stl = s.accounts.filter((a) => a.stalled).map((a) => a.name);
   if (dis.length) lines.push(`⚠ เกมหลุด ${dis.length} จอ: ${dis.join(', ')}`);
   if (stl.length) lines.push(`⚠ อาจค้าง ${stl.length} จอ: ${stl.join(', ')}`);
   $('alert').style.display = off ? 'block' : 'none';
   $('alert').textContent = lines.join('  ·  ');
-  document.title = (off ? `(${off} มีปัญหา) ` : '') + 'ตัวจัดการพักจอเกม';
+  document.title = (checks.length ? `🚨 เช็คผู้เล่น ${checks.length} จอ ` : off ? `(${off} มีปัญหา) ` : '') + 'ตัวจัดการพักจอเกม';
   $('sOpen').textContent = s.totals.open;
   $('sRest').textContent = s.totals.resting;
   $('sCpu').textContent = fmt(s.totals.cpu, 1) + '%';
