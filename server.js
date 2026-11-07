@@ -41,7 +41,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 // ---------- ข้อมูลที่บันทึกไว้ ----------
 const DEFAULT_DATA = {
-  settings: { idleSec: 30, fps: 1, mute: true, stallMin: 5, trimBelowGB: 2, edgePath: '' },
+  settings: { idleSec: 30, fps: 1, mute: true, stallMin: 5, trimBelowGB: 2, trimEveryMin: 0, edgePath: '' },
   profiles: {},   // ชื่อโปรไฟล์ -> { dir, port }
   accounts: []    // { id, name, profile, url, auto, targetId }
 };
@@ -505,12 +505,13 @@ async function trimProfile(name) {
   logEvent('โปรไฟล์ ' + name, `คืน RAM (ก่อนคืน ${before} MB)`);
 }
 
-// คืน RAM อัตโนมัติ: เฉพาะตอน RAM ว่างทั้งเครื่องต่ำกว่าที่ตั้งไว้ และเฉพาะโปรไฟล์ที่ทุกจอพักอยู่หรือถูกย่อ
-// (คืนตอนมีจอกำลังเล่นจะทำให้จอนั้นกระตุก) เริ่มจากโปรไฟล์ที่ใช้ RAM มากสุด แล้วหยุดทันทีที่ RAM ว่างพอ
+// คืน RAM อัตโนมัติ: เมื่อ RAM ว่างทั้งเครื่องต่ำกว่าที่ตั้งไว้ หรือครบรอบเวลาที่ตั้งไว้ และเฉพาะโปรไฟล์ที่ทุกจอพักอยู่หรือถูกย่อ
+// (คืนตอนมีจอกำลังเล่นจะทำให้จอนั้นกระตุก) กรณี RAM ต่ำเริ่มจากโปรไฟล์ที่ใช้ RAM มากสุด แล้วหยุดทันทีที่ RAM ว่างพอ
 const TRIM_IDLE_MS = 30000;
 const TRIM_COOLDOWN_MS = 5 * 60000;
 async function autoTrimTick() {
   const limitBytes = data.settings.trimBelowGB * 1024 ** 3;
+  const everyMin = data.settings.trimEveryMin;
   const candidates = [];
   for (const [name, b] of browsers) {
     if (!b.cdp) continue;
@@ -523,15 +524,33 @@ async function autoTrimTick() {
     }
     b.idleSince ??= Date.now();
     if (Date.now() - b.idleSince < TRIM_IDLE_MS) continue;
-    if (Date.now() - (b.lastTrimAt || 0) < TRIM_COOLDOWN_MS) continue;
-    candidates.push([name, b]);
+    const sinceTrim = Date.now() - (b.lastTrimAt || 0);
+    const timedDue = everyMin > 0 && sinceTrim >= everyMin * 60000;
+    if (!timedDue && sinceTrim < TRIM_COOLDOWN_MS) continue;
+    candidates.push([name, b, timedDue]);
   }
   candidates.sort((x, y) => y[1].ramMB - x[1].ramMB);
-  for (const [name] of candidates) {
-    if (!(limitBytes > 0) || os.freemem() >= limitBytes) return;
-    logEvent('โปรไฟล์ ' + name, `RAM ว่างเหลือ ${Math.round(os.freemem() / 1048576)} MB ต่ำกว่าที่ตั้งไว้`);
+  for (const [name, , timedDue] of candidates) {
+    const lowRam = limitBytes > 0 && os.freemem() < limitBytes;
+    if (!timedDue && !lowRam) continue;
+    logEvent('โปรไฟล์ ' + name, lowRam
+      ? `RAM ว่างเหลือ ${Math.round(os.freemem() / 1048576)} MB ต่ำกว่าที่ตั้งไว้`
+      : `ครบรอบคืน RAM ทุก ${everyMin} นาที (RAM ว่าง ${Math.round(os.freemem() / 1048576)} MB)`);
     await trimProfile(name);
   }
+}
+
+// นับรายได้จากการฟาม: Zeny + มูลค่าขยะ ขายขยะให้ร้านจึงไม่ทำให้ยอดเปลี่ยน นับเวลาเฉพาะตอนอยู่ในเกมและเปิด AUTO
+function updateFarm(rt, st) {
+  if (st.zenyN == null || !st.junk) return;
+  const now = Date.now();
+  const total = st.zenyN + st.junk.value;
+  if (!rt.farm || rt.farm.who !== st.name) rt.farm = { who: st.name, startTotal: total, activeMs: 0, lastAt: now };
+  const f = rt.farm;
+  const dt = now - f.lastAt;
+  f.lastAt = now;
+  if (st.auto && dt < 10000) f.activeMs += dt;
+  f.gain = total - f.startTotal;
 }
 
 // ---------- ลูปทำงานเบื้องหลัง ----------
@@ -580,6 +599,7 @@ async function tick() {
       rt.offSince = null;
       rt.disconnected = false;
       rt.stats = info.stats;
+      updateFarm(rt, info.stats);
       // เปิด AUTO อยู่แต่ทุกค่าไม่ขยับเลยนานเกินกำหนด => น่าจะค้าง
       const st = info.stats;
       const sig = JSON.stringify([st.hp?.text, st.sp?.text, st.base?.text, st.job?.text, st.zeny, st.weight?.text, st.map]);
@@ -623,7 +643,8 @@ async function tick() {
       const trimAt = browsers.get(acc.profile)?.lastTrimAt;
       logEvent(acc.name, `เปิดจอกลับหลังซ่อน ${Math.round(r.hiddenMs / 60000)} นาที: เกมหน่วงรวม ${r.total} ms ` +
         `(${r.count} ครั้ง ยาวสุด ${r.max} ms) · ` +
-        (s.trimBelowGB > 0 ? `คืน RAM เมื่อว่างต่ำกว่า ${s.trimBelowGB} GB` : 'คืน RAM อัตโนมัติปิดอยู่') +
+        (s.trimBelowGB > 0 ? `คืน RAM เมื่อว่างต่ำกว่า ${s.trimBelowGB} GB` : 'คืนตาม RAM ว่างปิดอยู่') +
+        (s.trimEveryMin > 0 ? ` · คืนตามรอบทุก ${s.trimEveryMin} นาที` : '') +
         (trimAt ? ` · คืน RAM ล่าสุด ${Math.round((Date.now() - trimAt) / 60000)} นาทีก่อน` : ''));
     }
     const snap = [info.screen, info.hidden, page.resting, rt.disconnected, rt.stalled].join('|');
@@ -744,6 +765,7 @@ function state() {
       id: a.id, name: a.name, profile: a.profile, url: a.url, auto: a.auto,
       status: rt.status, resting: rt.resting, focused: rt.focused, idleSec: rt.idleSec,
       cpu: rt.cpu, heapMB: rt.heapMB, error: rt.error, stats: rt.stats || null,
+      farm: rt.farm ? { gain: rt.farm.gain || 0, activeMs: rt.farm.activeMs } : null,
       disconnected: !!rt.disconnected,
       stalled: !!rt.stalled && !rt.disconnected,
       humanCheck: rt.humanCheck || null,
@@ -806,6 +828,7 @@ async function handleApi(req, res, parts) {
     if (body.mute != null) s.mute = !!body.mute;
     if (body.stallMin != null) s.stallMin = Math.max(0, Number(body.stallMin) || 0);
     if (body.trimBelowGB != null) s.trimBelowGB = Math.max(0, Number(body.trimBelowGB) || 0);
+    if (body.trimEveryMin != null) s.trimEveryMin = Math.max(0, Number(body.trimEveryMin) || 0);
     save();
     // ใช้ fps ใหม่กับจอที่พักอยู่
     for (const acc of data.accounts) {
@@ -879,6 +902,9 @@ async function handleApi(req, res, parts) {
       save();
       break;
     }
+    case 'farmreset':
+      rtOf(acc).farm = null;
+      break;
     case 'rename':
       if (String(body.name || '').trim()) { acc.name = String(body.name).trim(); save(); }
       break;

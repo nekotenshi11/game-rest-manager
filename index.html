@@ -66,6 +66,7 @@ button:disabled{opacity:.5;cursor:default}
 .warn{color:#d97706;font-size:12px;margin-top:6px}
 .extra{font-size:12px;color:var(--mu);margin-top:6px;line-height:1.9}
 .extra b{color:var(--tx);font-variant-numeric:tabular-nums}
+.farm-reset{font-size:11px;padding:0 6px;margin-left:4px}
 .item-chip{background:var(--soft);border-radius:6px;padding:1px 6px;white-space:nowrap}
 .extra .low,.extra .low b{color:var(--bad)}
 .loginline{font-size:12px;color:var(--mu);margin-top:6px}
@@ -94,6 +95,7 @@ dialog .row{display:flex;gap:8px;justify-content:flex-end;margin-top:14px;flex-w
     <div class="stat"><div class="k">กำลังพัก</div><div class="v" id="sRest">0</div></div>
     <div class="stat"><div class="k">CPU Edge รวม (ทั้งเครื่อง)</div><div class="v" id="sCpu">0%</div></div>
     <div class="stat"><div class="k">RAM Edge รวม</div><div class="v" id="sRam">0 MB</div><div class="k" id="sFree"></div></div>
+    <div class="stat"><div class="k">ขยะในกระเป๋ารวม</div><div class="v" id="sJunk">0 z</div><div class="k" id="sFarm"></div></div>
   </div>
 
   <div class="panel">
@@ -106,6 +108,7 @@ dialog .row{display:flex;gap:8px;justify-content:flex-end;margin-top:14px;flex-w
     </label>
     <label><input type="checkbox" id="mute"> ปิดเสียงตอนพัก</label>
     <label title="คืน RAM ให้โปรไฟล์ที่ทุกจอพักอยู่หรือถูกย่อ เมื่อ RAM ว่างทั้งเครื่องต่ำกว่าค่านี้ (0 = ปิด)">คืน RAM อัตโนมัติเมื่อ RAM ว่างต่ำกว่า <input type="number" id="trimBelowGB" min="0" step="0.5"> GB</label>
+    <label title="คืน RAM ตามรอบเวลา แม้ RAM ยังว่างเหลือเยอะ เฉพาะโปรไฟล์ที่ทุกจอพักอยู่หรือถูกย่อ (0 = ปิด)">และคืนทุก <input type="number" id="trimEveryMin" min="0" step="1"> นาที</label>
     <label title="เปิด AUTO อยู่ แต่ HP/SP/EXP/Zeny/น้ำหนัก ไม่ขยับเลย = น่าจะค้าง (0 = ปิด)">เตือนค้างเมื่อค่าไม่ขยับ <input type="number" id="stallMin" min="0" step="1"> นาที</label>
     <span class="grow"></span>
     <button onclick="api('all/rest')">พักทั้งหมด</button>
@@ -204,7 +207,26 @@ function itemsLine(items) {
     `<span class="item-chip${it.qty ? '' : ' low'}">${esc(it.name)} <b>x${fmt(it.qty)}</b></span>`).join(' ')}</div>`;
 }
 
-function statsBlock(s) {
+const FARM_MIN_MS = 5 * 60000;
+function farmRate(f) {
+  return f && f.activeMs >= FARM_MIN_MS ? f.gain / (f.activeMs / 3600000) : null;
+}
+
+function farmLine(a) {
+  const j = a.stats?.junk;
+  if (!j) return '';
+  const f = a.farm;
+  const mins = f ? Math.floor(f.activeMs / 60000) : 0;
+  const rate = farmRate(f);
+  return `<div class="extra" title="ราคาขายให้ร้านในเกม ไม่รวมของหายาก การ์ด ของตีบวก หรือมี option">
+    <span>ขยะในกระเป๋า</span> <b>${fmt(j.value)} z</b> <span>(${fmt(j.qty)} ชิ้น)</span>
+    ${f ? `<br><span>ฟามได้</span> <b>${f.gain > 0 ? '+' : ''}${fmt(f.gain)} z</b> <span>ใน ${Math.floor(mins / 60)} ชม. ${mins % 60} นาที</span>
+    ${rate === null ? '<span>· ครบ 5 นาทีจะคิดต่อชั่วโมงให้</span>' : `<span>·</span> <b>≈ ${fmt(rate)} z/ชม.</b>`}
+    <button class="farm-reset" onclick="api('accounts/${a.id}/farmreset')">นับใหม่</button>` : ''}
+  </div>`;
+}
+
+function statsBlock(s, a) {
   if (!s) return '';
   const hpLow = s.hp && s.hp.pct < 30;
   const dead = s.hp && /^0\//.test(s.hp.text);
@@ -223,6 +245,7 @@ function statsBlock(s) {
     </div>
     ${premiumLine(s.premiumEndsAt)}
     ${itemsLine(s.items)}
+    ${farmLine(a)}
     ${dead ? '<div class="warn">☠ ตัวละครตาย</div>' : hpLow ? '<div class="warn">⚠ HP ต่ำ</div>' : ''}
     ${s.auto === false ? '<div class="warn">⚠ AUTO ปิดอยู่</div>' : ''}
     ${s.heavy ? `<div class="warn">⚠ ${esc(s.heavy)}</div>` : ''}
@@ -260,7 +283,7 @@ function card(a) {
     ${a.humanCheck ? `<div class="err">🚨 เกมขึ้นเช็คผู้เล่น ต้องตอบเองในหน้าเกม ไม่ตอบหรือผิดครบจะถูกส่งเข้าคุก · ${esc(a.humanCheck.prompt)} · ${esc(a.humanCheck.meta)}</div>` : ''}
     ${a.disconnected ? '<div class="err">เกมไม่ได้อยู่ในแผนที่ — ปลุกจอให้แล้ว กด "เปิด / คืนภาพ" แล้วล็อกอินใหม่ (ค่าด้านล่างเป็นค่าล่าสุดก่อนหลุด)</div>' : ''}
     ${a.stalled ? `<div class="err">เปิด AUTO อยู่ แต่ค่าทุกอย่างไม่ขยับเกิน ${last?.settings.stallMin ?? ''} นาที — ปลุกจอให้แล้ว ลองเปิดดูว่าเกมค้างไหม (ถ้าค้างกด F5)</div>` : ''}
-    ${statsBlock(a.stats)}
+    ${statsBlock(a.stats, a)}
     ${a.error ? `<div class="err">${esc(a.error)}</div>` : ''}
   </div>`;
 }
@@ -284,12 +307,17 @@ function render(s) {
   $('sCpu').textContent = fmt(s.totals.cpu, 1) + '%';
   $('sRam').textContent = fmt(s.totals.ramMB) + ' MB';
   $('sFree').textContent = `RAM ว่างทั้งเครื่อง ${fmt(s.totals.freeMB / 1024, 1)} GB`;
+  const live = s.accounts.filter((a) => a.status === 'open' && !a.disconnected);
+  const rates = live.map((a) => farmRate(a.farm)).filter((r) => r !== null);
+  $('sJunk').textContent = fmt(live.reduce((sum, a) => sum + (a.stats?.junk?.value || 0), 0)) + ' z';
+  $('sFarm').textContent = rates.length ? `รวม ≈ ${fmt(rates.reduce((x, y) => x + y, 0))} z/ชม. (${rates.length} จอ)` : '';
   if (!editingSettings) {
     $('idleSec').value = s.settings.idleSec;
     $('fps').value = String(s.settings.fps);
     $('mute').checked = s.settings.mute;
     $('stallMin').value = s.settings.stallMin ?? 5;
     $('trimBelowGB').value = s.settings.trimBelowGB ?? 2;
+    $('trimEveryMin').value = s.settings.trimEveryMin ?? 0;
   }
   $('profiles').innerHTML = s.profiles.map((p) => `<div class="p">
       <b>${esc(p.name)}</b>
@@ -403,7 +431,7 @@ function rename(id) {
   if (name) api(`accounts/${id}/rename`, { name });
 }
 
-for (const el of ['idleSec', 'fps', 'mute', 'stallMin', 'trimBelowGB']) {
+for (const el of ['idleSec', 'fps', 'mute', 'stallMin', 'trimBelowGB', 'trimEveryMin']) {
   $(el).addEventListener('focus', () => { editingSettings = true; });
   $(el).addEventListener('blur', () => { editingSettings = false; });
   $(el).addEventListener('change', () => api('settings', {
@@ -411,7 +439,8 @@ for (const el of ['idleSec', 'fps', 'mute', 'stallMin', 'trimBelowGB']) {
     fps: Number($('fps').value),
     mute: $('mute').checked,
     stallMin: Number($('stallMin').value),
-    trimBelowGB: Number($('trimBelowGB').value)
+    trimBelowGB: Number($('trimBelowGB').value),
+    trimEveryMin: Number($('trimEveryMin').value)
   }));
 }
 

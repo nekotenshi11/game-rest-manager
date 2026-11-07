@@ -76,7 +76,20 @@ window.__gameRestStats = (() => {
     if (weight) lastSeen.weight = bar(weight);
     try {
       const { inv, char } = hudData(hud);
-      if (char && typeof char.zeny === 'number') lastSeen.zeny = char.zeny.toLocaleString('en-US');
+      if (char && typeof char.zeny === 'number') {
+        lastSeen.zeny = char.zeny.toLocaleString('en-US');
+        lastSeen.zenyN = char.zeny;
+      }
+      if (inv && Array.isArray(inv.items)) {
+        // ขยะ = เงื่อนไขเดียวกับปุ่มใส่วัตถุดิบลงตะกร้าขายของเกม (ไม่รวมของหายาก ตีบวก มี option) และตัดของที่ล็อก/ผูกตัว
+        const junk = inv.items.filter((it) => it.type === 'Miscellaneous' && it.sellPrice > 0 && !it.locked && !it.bound &&
+          !it.refine && !it.cards?.length && !it.sockets && !it.affixes?.length &&
+          (!it.rarity || it.rarity === 'common' || it.rarity === 'uncommon'));
+        lastSeen.junk = {
+          value: junk.reduce((sum, it) => sum + it.sellPrice * it.qty, 0),
+          qty: junk.reduce((sum, it) => sum + it.qty, 0)
+        };
+      }
       if (inv && inv.weightLimit > 0) {
         const n = (x) => Math.round(x).toLocaleString('en-US');
         lastSeen.weight = { text: n(inv.weight) + '/' + n(inv.weightLimit), pct: inv.weight / inv.weightLimit * 100 };
@@ -116,6 +129,8 @@ window.__gameRestStats = (() => {
       job: bars.Job || null,
       heavy: txt('.hud-heavy', hud),
       zeny: lastSeen.zeny || null,
+      zenyN: lastSeen.zenyN ?? null,
+      junk: lastSeen.junk || null,
       weight: lastSeen.weight || null,
       // หน้าเช็คผู้เล่นของเกม: แค่อ่านไปเตือน ผู้เล่นต้องตอบเอง
       humanCheck: document.querySelector('.human-check')
