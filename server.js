@@ -36,6 +36,7 @@ function logEvent(name, msg) {
 }
 const CORES = os.cpus().length;
 const DISCONNECT_MS = 10000;
+const UNRESPONSIVE_MS = 30000;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -553,6 +554,51 @@ function updateFarm(rt, st) {
   f.gain = total - f.startTotal;
 }
 
+// จดจุดฟามล่าสุด (แผนที่ + CH ตอนเปิด AUTO นอกเมือง), เวลาที่หยุดฟาม และรอบที่กลับไปขายของ (Zeny เพิ่ม + ขยะลด)
+// เก็บลง data.json เพื่อให้รู้ CH เดิมแม้ปิดโปรแกรมไปแล้ว
+const SELL_TRIP_MS = 3 * 60000;
+function trackTrip(acc, rt, st) {
+  if (!st.name) return;
+  const now = Date.now();
+  let changed = false;
+  if (!acc.trip || acc.trip.who !== st.name) {
+    acc.trip = { who: st.name };
+    rt.farmSeenAt = 0;
+    rt.prevMoney = null;
+    changed = true;
+  }
+  const t = acc.trip;
+  if (st.auto && st.map && !st.map.includes('เมือง')) {
+    if (t.map !== st.map || t.ch !== st.ch) {
+      t.map = st.map;
+      t.ch = st.ch;
+      changed = true;
+    }
+    rt.farmSeenAt = now;
+    if (t.stoppedAt) {
+      t.stoppedAt = 0;
+      changed = true;
+    }
+  } else if (rt.farmSeenAt && !t.stoppedAt) {
+    t.stoppedAt = rt.farmSeenAt;
+    changed = true;
+  }
+  const p = rt.prevMoney;
+  if (p && st.zenyN != null && st.junk && st.zenyN > p.zeny && st.junk.value < p.junk) {
+    const got = st.zenyN - p.zeny;
+    if (t.soldAt && now - t.soldAt < SELL_TRIP_MS) {
+      t.soldZeny += got;
+    } else {
+      t.soldZeny = got;
+      logEvent(acc.name, `ขายของ (ฟามล่าสุด ${t.map || '?'} ${t.ch || ''})`);
+    }
+    t.soldAt = now;
+    changed = true;
+  }
+  if (st.zenyN != null && st.junk) rt.prevMoney = { zeny: st.zenyN, junk: st.junk.value };
+  if (changed) save();
+}
+
 // ---------- ลูปทำงานเบื้องหลัง ----------
 // เชื่อมกับ Edge/แท็บที่เปิดค้างไว้ (เช่นตอนรีสตาร์ทโปรแกรมนี้)
 async function reconcile() {
@@ -586,11 +632,24 @@ async function tick() {
       rt.stalled = false;
       rt.sig = null;
       rt.humanCheck = null;
+      rt.noTopSince = null;
+      rt.unresponsive = false;
       return;
     }
     rt.status = 'open';
     const info = await page.poll().catch(() => null);
-    if (!info) return;
+    // หน้าเกมหลักไม่ตอบคำถามเกิน 30 วิ (เช่น หน่วยความจำเครื่องหมด) => เตือนบนการ์ด แทนที่จะค้างค่าเดิมไว้เงียบๆ
+    const topOk = !!info && info.screen !== undefined;
+    rt.noTopSince = topOk ? null : rt.noTopSince ?? Date.now();
+    const wasUnresponsive = !!rt.unresponsive;
+    rt.unresponsive = !topOk && Date.now() - rt.noTopSince > UNRESPONSIVE_MS;
+    if (rt.unresponsive && !wasUnresponsive) {
+      rt.unresponsiveAt = rt.noTopSince;
+      logEvent(acc.name, `⚠ หน้าเกมไม่ตอบสนองเกิน ${UNRESPONSIVE_MS / 1000} วินาที (RAM ว่าง ${Math.round(os.freemem() / 1048576)} MB · หน่วยความจำรวมเหลือ ${commit.freeGB.toFixed(1)} GB)`);
+    } else if (!rt.unresponsive && wasUnresponsive) {
+      logEvent(acc.name, `หน้าเกมกลับมาตอบสนอง หลังค้าง ${Math.round((Date.now() - rt.unresponsiveAt) / 60000)} นาที`);
+    }
+    if (!topOk) return;
     // หลุด/อยู่หน้าล็อกอินเกิน 10 วิ (เผื่อเวลาโหลดแผนที่) => ปลุกจอให้เห็น และไม่พักอัตโนมัติ
     if (info.stats?.inGame === false) {
       rt.offSince ??= Date.now();
@@ -600,6 +659,7 @@ async function tick() {
       rt.disconnected = false;
       rt.stats = info.stats;
       updateFarm(rt, info.stats);
+      trackTrip(acc, rt, info.stats);
       // เปิด AUTO อยู่แต่ทุกค่าไม่ขยับเลยนานเกินกำหนด => น่าจะค้าง
       const st = info.stats;
       const sig = JSON.stringify([st.hp?.text, st.sp?.text, st.base?.text, st.job?.text, st.zeny, st.weight?.text, st.map]);
@@ -729,6 +789,30 @@ async function updateTick() {
 }
 
 // จดหน่วยความจำที่ส่วนการ์ดจอของแต่ละโปรไฟล์จองไว้ ดูว่าโตเร็วแค่ไหน
+// หน่วยความจำรวมของเครื่อง (RAM + pagefile) เต็ม = แท็บเกมค้าง/crash ทุกจอ => อ่านทุก 30 วิ และเตือนก่อนหมด
+const COMMIT_WARN_GB = 6;
+const commit = { limitGB: 0, freeGB: 0, low: false };
+function commitTick() {
+  const ps = '$o=Get-CimInstance Win32_OperatingSystem; "$($o.TotalVirtualMemorySize) $($o.FreeVirtualMemory)"';
+  return new Promise((resolve) => {
+    execFile('powershell', ['-NoProfile', '-NonInteractive', '-Command', ps], { windowsHide: true }, (err, out) => {
+      const [total, free] = String(out).trim().split(/\s+/).map(Number);
+      if (!err && total > 0) {
+        commit.limitGB = total / 1048576;
+        commit.freeGB = free / 1048576;
+        const low = commit.freeGB < COMMIT_WARN_GB;
+        if (low !== commit.low) {
+          logEvent('เครื่อง', low
+            ? `⚠ หน่วยความจำรวมเหลือ ${commit.freeGB.toFixed(1)} GB จาก ${commit.limitGB.toFixed(1)} GB (ใกล้หมด เกมอาจค้างทุกจอ)`
+            : `หน่วยความจำรวมกลับมาเหลือ ${commit.freeGB.toFixed(1)} GB`);
+          commit.low = low;
+        }
+      }
+      resolve();
+    });
+  });
+}
+
 function gpuTick() {
   const active = [...browsers.entries()].filter(([, b]) => b.cdp && b.gpuPids?.length);
   if (!active.length) return Promise.resolve();
@@ -765,9 +849,12 @@ function state() {
       id: a.id, name: a.name, profile: a.profile, url: a.url, auto: a.auto,
       status: rt.status, resting: rt.resting, focused: rt.focused, idleSec: rt.idleSec,
       cpu: rt.cpu, heapMB: rt.heapMB, error: rt.error, stats: rt.stats || null,
-      farm: rt.farm ? { gain: rt.farm.gain || 0, activeMs: rt.farm.activeMs } : null,
+      trip: a.trip || null,
+      farm: rt.farm ?{ gain: rt.farm.gain || 0, activeMs: rt.farm.activeMs } : null,
       disconnected: !!rt.disconnected,
-      stalled: !!rt.stalled && !rt.disconnected,
+      stalled: !!rt.stalled && !rt.disconnected && !rt.unresponsive,
+      unresponsive: !!rt.unresponsive,
+      unresponsiveSince: rt.unresponsive ? rt.unresponsiveAt : 0,
       humanCheck: rt.humanCheck || null,
       // ไม่ส่งรหัสผ่านออกไปหน้าควบคุมเด็ดขาด
       login: a.login ? { user: a.login.user, auto: !!a.login.auto, hasPass: !!a.login.passEnc } : null,
@@ -788,10 +875,12 @@ function state() {
       open: accounts.filter((a) => a.status === 'open').length,
       disconnected: accounts.filter((a) => a.disconnected).length,
       stalled: accounts.filter((a) => a.stalled).length,
+      unresponsive: accounts.filter((a) => a.unresponsive).length,
       resting: accounts.filter((a) => a.resting).length,
       cpu: profiles.reduce((s, p) => s + p.cpu, 0),
       ramMB: profiles.reduce((s, p) => s + p.ramMB, 0),
-      freeMB: os.freemem() / 1048576
+      freeMB: os.freemem() / 1048576,
+      commit: commit.limitGB ? { limitGB: commit.limitGB, freeGB: commit.freeGB, low: commit.low } : null
     }
   };
 }
@@ -953,5 +1042,6 @@ server.listen(PORT, '127.0.0.1', () => {
   loop(autoTrimTick, 10000);
   loop(keepAwakeTick, 5000);
   setTimeout(() => loop(gpuTick, 5 * 60000), 10000);
+  loop(commitTick, 30000);
   setTimeout(() => loop(updateTick, 30 * 60000), 5000);
 });
