@@ -5,91 +5,111 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>ตัวจัดการพักจอเกม</title>
 <style>
-:root{--bg:#f4f5f7;--card:#fff;--tx:#1d2330;--mu:#667085;--bd:#e3e6ec;--pri:#2563eb;--ok:#16a34a;--rest:#7c3aed;--bad:#dc2626;--soft:#eef1f5}
-@media(prefers-color-scheme:dark){:root{--bg:#11141b;--card:#1a1f2b;--tx:#e8ebf2;--mu:#98a2b3;--bd:#2a3142;--soft:#232a39}}
+:root{
+  --bg:#0f0f0f;--card:#181818;--card2:#1f1f1f;--tx:#f2f2f2;--mu:#8b8b8b;--mu2:#5f5f5f;
+  --bd:#272727;--bd2:#333;--soft:#232323;--pri:#e8e8e8;--ok:#7ccf9a;--rest:#a8a8a8;--bad:#e5707a;--amber:#d9a55b
+}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--tx);font:14px/1.5 "Segoe UI",Tahoma,sans-serif}
-main{max-width:1100px;margin:0 auto;padding:20px 16px 40px}
-h1{font-size:22px;margin:0}
-.sub{color:var(--mu);margin:2px 0 16px}
-.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:16px}
-.stat,.card,.panel{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:14px 16px}
+html{background:var(--bg)}
+body{margin:0;background:radial-gradient(1200px 500px at 50% -200px,#1c1c1c,var(--bg) 70%);background-color:var(--bg);color:var(--tx);
+  font:14px/1.55 Inter,"Segoe UI","Leelawadee UI",Tahoma,sans-serif;-webkit-font-smoothing:antialiased;min-height:100vh}
+main{max-width:1120px;margin:0 auto;padding:28px 16px 48px}
+h1{font-size:18px;font-weight:600;margin:0;letter-spacing:.1px}
+.sub{color:var(--mu);margin:2px 0 22px;font-size:13px}
+.sec{display:flex;justify-content:space-between;align-items:flex-end;gap:12px;margin:26px 0 10px;flex-wrap:wrap}
+.sec h2{font-size:15px;font-weight:600;margin:0}
+.sec p{margin:2px 0 0;color:var(--mu);font-size:13px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:10px}
+.stat,.card,.panel{background:var(--card);border:1px solid var(--bd);border-radius:10px}
+.stat{padding:12px 14px 14px}
 .stat .k{color:var(--mu);font-size:12px}
-.stat .v{font-size:26px;font-weight:600;font-variant-numeric:tabular-nums}
-.panel{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;margin-bottom:16px}
-.panel label{display:flex;gap:6px;align-items:center;color:var(--mu)}
-input,select{font:inherit;color:inherit;background:var(--soft);border:1px solid var(--bd);border-radius:8px;padding:6px 9px}
-input[type=number]{width:70px}
-button{font:inherit;border:1px solid var(--bd);background:var(--soft);color:var(--tx);padding:6px 12px;border-radius:8px;cursor:pointer}
-button:hover{border-color:var(--pri)}
-button.pri{background:var(--pri);border-color:var(--pri);color:#fff}
+.stat .v{font-size:26px;font-weight:600;font-variant-numeric:tabular-nums;margin-top:6px;letter-spacing:-.3px;line-height:1.25}
+.stat .k + .v + .k{margin-top:4px;color:var(--mu2)}
+.panel{display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;padding:12px 14px}
+.panel label{display:flex;gap:6px;align-items:center;color:var(--mu);font-size:13px}
+input,select{font:inherit;font-size:13px;color:inherit;background:var(--card2);border:1px solid var(--bd2);border-radius:7px;padding:5px 9px;outline:none}
+input:focus,select:focus{border-color:#555}
+input[type=number]{width:62px;font-variant-numeric:tabular-nums}
+input[type=checkbox]{accent-color:#d0d0d0}
+button{font:inherit;font-size:13px;border:1px solid var(--bd2);background:var(--card2);color:var(--tx);padding:5px 11px;border-radius:7px;cursor:pointer;transition:background .12s,border-color .12s}
+button:hover{background:#2a2a2a;border-color:#444}
+button.pri{background:var(--pri);border-color:var(--pri);color:#111;font-weight:600}
+button.pri:hover{background:#fff}
 button.dan{color:var(--bad)}
-button:disabled{opacity:.5;cursor:default}
+button:disabled{opacity:.45;cursor:default}
 .grow{flex:1}
-.add{display:grid;grid-template-columns:1fr 2fr 1fr auto;gap:8px;margin-bottom:16px}
+.add{display:grid;grid-template-columns:1fr 2fr 1fr auto;gap:8px}
 @media(max-width:700px){.add{grid-template-columns:1fr}}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:12px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(330px,1fr));gap:10px}
+.card{position:relative;padding:14px 16px}
 .card .top{display:flex;align-items:center;gap:10px}
-.card{position:relative}
-.grip{position:absolute;top:2px;left:2px;cursor:grab;color:var(--mu);font-size:13px;line-height:1;user-select:none;padding:3px;border-radius:5px;opacity:.3;transition:opacity .15s}
-.card:hover .grip{opacity:.65}
+.grip{position:absolute;top:3px;left:3px;cursor:grab;color:var(--mu);font-size:13px;line-height:1;user-select:none;padding:3px;border-radius:5px;opacity:.25;transition:opacity .15s}
+.card:hover .grip{opacity:.6}
 .grip:hover{opacity:1!important;background:var(--soft)}
-.card.dragging{opacity:.45}
-.card.drop-before{box-shadow:-3px 0 0 var(--pri)}
-.card.drop-after{box-shadow:3px 0 0 var(--pri)}
-.one-col .card.drop-before{box-shadow:0 -3px 0 var(--pri)}
-.one-col .card.drop-after{box-shadow:0 3px 0 var(--pri)}
+.card.dragging{opacity:.4}
+.card.drop-before{box-shadow:-2px 0 0 var(--tx)}
+.card.drop-after{box-shadow:2px 0 0 var(--tx)}
+.one-col .card.drop-before{box-shadow:0 -2px 0 var(--tx)}
+.one-col .card.drop-after{box-shadow:0 2px 0 var(--tx)}
 .card .name{font-size:16px;font-weight:600}
-.card .meta{color:var(--mu);font-size:12px;word-break:break-all}
-.badge{margin-left:auto;font-size:12px;padding:2px 10px;border-radius:99px;background:var(--soft);color:var(--mu);white-space:nowrap}
-.badge.open{background:#16a34a22;color:var(--ok)}
-.badge.rest{background:#7c3aed22;color:var(--rest)}
-.badge.starting{background:#2563eb22;color:var(--pri)}
-.badge.off{background:#dc262622;color:var(--bad)}
-.card.off{border-color:var(--bad)}
+.card .meta{color:var(--mu2);font-size:12px;word-break:break-all}
+.badge{margin-left:auto;font-size:12px;padding:2px 9px 2px 8px;border-radius:6px;background:var(--soft);border:1px solid var(--bd2);color:var(--mu);white-space:nowrap;display:inline-flex;align-items:center;gap:6px}
+.badge::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--mu2)}
+.badge.open{background:#13301f;border-color:#21603a;color:#6fe0a0;font-weight:600}
+.badge.open::before{background:#4ade80;box-shadow:0 0 6px #4ade80}
+.badge.rest{background:#241d3a;border-color:#43357a;color:#b9a6ff;font-weight:600}
+.badge.rest::before{background:#9b87f5}
+.card.play{border-top:2px solid #2f9e5f}
+.card.rest{border-top:2px solid #6b5bd2}
+.badge.starting::before{background:var(--amber)}
+.badge.off{color:var(--bad)}
+.badge.off::before{background:var(--bad)}
+.card.off{border-color:#5a2a2e}
 .card.off .st{opacity:.55}
-.alert{display:none;background:#dc262618;border:1px solid var(--bad);color:var(--bad);border-radius:12px;padding:10px 16px;margin-bottom:16px;font-weight:600}
+.alert{display:none;background:#2a1517;border:1px solid #5a2a2e;color:#f0a3a9;border-radius:10px;padding:10px 14px;margin-bottom:16px;font-weight:500;font-size:13px}
 .btns{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0 8px}
 .nums{display:flex;gap:16px;color:var(--mu);font-size:12px;font-variant-numeric:tabular-nums;flex-wrap:wrap}
-.nums b{color:var(--tx)}
-.err{color:var(--bad);font-size:12px;margin-top:6px}
-.empty{color:var(--mu);text-align:center;padding:40px}
-.hint{color:var(--mu);font-size:12px;margin-top:20px;line-height:1.7}
-.st{border-top:1px solid var(--bd);margin-top:10px;padding-top:10px}
-.st .who{display:flex;justify-content:space-between;font-size:12px;color:var(--mu);margin-bottom:6px;gap:8px;flex-wrap:wrap}
-.st .who b{color:var(--tx)}
-.st .bars{display:grid;grid-template-columns:1fr 1fr;gap:6px 14px}
-.sb .l{display:flex;justify-content:space-between;font-size:12px;color:var(--mu)}
-.sb .l b{color:var(--tx);font-variant-numeric:tabular-nums}
-.sb .t{height:6px;border-radius:9px;background:var(--soft);overflow:hidden}
-.sb .f{height:100%;border-radius:9px}
-.warn{color:#d97706;font-size:12px;margin-top:6px}
-.extra{font-size:12px;color:var(--mu);margin-top:6px;line-height:1.9}
-.extra b{color:var(--tx);font-variant-numeric:tabular-nums}
+.nums b{color:var(--tx);font-weight:500}
+.err{color:var(--bad);font-size:13px;margin-top:8px;background:#2a1517;border:1px solid #4a2427;border-radius:7px;padding:6px 9px}
+.empty{color:var(--mu);text-align:center;padding:40px;border:1px dashed var(--bd2);border-radius:10px}
+.hint{color:var(--mu2);font-size:12px;margin-top:22px;line-height:1.8}
+.st{border-top:1px solid var(--bd);margin-top:12px;padding-top:12px}
+.st .who{display:flex;justify-content:space-between;font-size:12px;color:var(--mu);margin-bottom:8px;gap:8px;flex-wrap:wrap}
+.st .who b{color:var(--tx);font-weight:600}
+.st .bars{display:grid;grid-template-columns:1fr 1fr;gap:8px 16px}
+.sb .l{display:flex;justify-content:space-between;font-size:12px;color:var(--mu);margin-bottom:3px}
+.sb .l b{color:var(--tx);font-variant-numeric:tabular-nums;font-weight:500}
+.sb .t{height:4px;border-radius:2px;background:#262626;overflow:hidden}
+.sb .f{height:100%;border-radius:2px}
+.warn{color:var(--amber);font-size:13px;margin-top:6px}
+.extra{font-size:12px;color:var(--mu);margin-top:8px;line-height:1.9}
+.extra b{color:var(--tx);font-variant-numeric:tabular-nums;font-weight:500}
 .farm-reset{font-size:11px;padding:0 6px;margin-left:4px}
-.item-chip{background:var(--soft);border-radius:6px;padding:1px 6px;white-space:nowrap}
+.item-chip{background:var(--soft);border:1px solid var(--bd);border-radius:5px;padding:0 6px;white-space:nowrap}
 .extra .low,.extra .low b{color:var(--bad)}
 .loginline{font-size:12px;color:var(--mu);margin-top:6px}
-.loginmsg{font-size:12px;margin-top:4px;color:var(--pri)}
+.loginmsg{font-size:13px;margin-top:4px;color:var(--tx)}
 .loginmsg.bad{color:var(--bad)}
-dialog{border:1px solid var(--bd);border-radius:14px;background:var(--card);color:var(--tx);padding:18px 20px;width:min(380px,calc(100vw - 32px))}
-dialog::backdrop{background:#0008}
+dialog{border:1px solid var(--bd2);border-radius:12px;background:var(--card);color:var(--tx);padding:18px 20px;width:min(380px,calc(100vw - 32px))}
+dialog::backdrop{background:#000a}
 dialog h3{margin:0 0 4px;font-size:16px}
 dialog .f{display:grid;gap:4px;margin:10px 0}
 dialog .f span{font-size:12px;color:var(--mu)}
 dialog input[type=text],dialog input[type=password]{width:100%}
 dialog .row{display:flex;gap:8px;justify-content:flex-end;margin-top:14px;flex-wrap:wrap}
-.prof{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
-.prof .p{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:6px 10px;font-size:12px;display:flex;gap:8px;align-items:center}
-</style>
+.prof{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:8px}
+.prof .p{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:8px 12px;font-size:12px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;color:var(--mu)}
+.prof .p b{color:var(--tx);font-size:13px}
+.prof .p button{padding:3px 9px;font-size:12px}</style>
 </head>
 <body>
 <main>
-  <h1>💤 ตัวจัดการพักจอเกม</h1>
+  <h1>ตัวจัดการพักจอเกม</h1>
   <div class="sub">เปิดหลายบัญชี แล้วพักภาพจอที่ไม่ได้ใช้ ลด CPU โดยเกมยังเชื่อมต่ออยู่ · <span id="ver"></span></div>
 
   <div class="alert" id="alert"></div>
 
+  <div class="sec"><div><h2>ภาพรวม</h2><p>สถานะทุกจอ การใช้เครื่อง และรายได้จากการฟาม</p></div></div>
   <div class="stats">
     <div class="stat"><div class="k">เปิดอยู่</div><div class="v" id="sOpen">0</div></div>
     <div class="stat"><div class="k">กำลังพัก</div><div class="v" id="sRest">0</div></div>
@@ -99,6 +119,7 @@ dialog .row{display:flex;gap:8px;justify-content:flex-end;margin-top:14px;flex-w
     <div class="stat"><div class="k">ขยะในกระเป๋ารวม</div><div class="v" id="sJunk">0 z</div><div class="k" id="sFarm"></div></div>
   </div>
 
+  <div class="sec"><div><h2>ตั้งค่า</h2><p>การพักจอ การคืน RAM และการเตือน</p></div></div>
   <div class="panel">
     <label>พักอัตโนมัติเมื่อไม่ได้ใช้ <input type="number" id="idleSec" min="0" step="5"> วินาที</label>
     <label>เฟรมตอนพัก
@@ -116,8 +137,10 @@ dialog .row{display:flex;gap:8px;justify-content:flex-end;margin-top:14px;flex-w
     <button onclick="api('all/wake')">คืนภาพทั้งหมด</button>
   </div>
 
+  <div class="sec"><div><h2>โปรไฟล์ Edge</h2><p>CPU, RAM และหน่วยความจำการ์ดจอของแต่ละ Edge</p></div></div>
   <div class="prof" id="profiles"></div>
 
+  <div class="sec"><div><h2>บัญชี</h2><p>ลากมุมการ์ดเพื่อเรียงลำดับ</p></div></div>
   <form class="add" id="addForm">
     <input id="aName" placeholder="ชื่อบัญชี เช่น ตัวฟาร์ม 1" required>
     <input id="aUrl" placeholder="ลิงก์เกม https://..." required>
@@ -126,7 +149,7 @@ dialog .row{display:flex;gap:8px;justify-content:flex-end;margin-top:14px;flex-w
     <button class="pri">+ เพิ่มบัญชี</button>
   </form>
 
-  <div class="grid" id="list"></div>
+  <div class="grid" id="list" style="margin-top:10px"></div>
 
   <dialog id="loginDlg">
     <form method="dialog" id="loginForm">
@@ -181,8 +204,8 @@ function badge(a) {
   if (a.humanCheck) return '<span class="badge off">🚨 เช็คผู้เล่น</span>';
   if (a.disconnected) return '<span class="badge off">⚠ หลุด / หน้าล็อกอิน</span>';
   if (a.stalled) return '<span class="badge off">⚠ ค่าไม่ขยับ (อาจค้าง)</span>';
-  if (a.resting) return '<span class="badge rest">💤 พักอยู่</span>';
-  return '<span class="badge open">● เล่นอยู่</span>';
+  if (a.resting) return '<span class="badge rest">พักอยู่</span>';
+  return '<span class="badge open">เล่นอยู่</span>';
 }
 
 function sbar(label, b, color, fallback) {
@@ -274,7 +297,9 @@ function statsBlock(s, a) {
 function card(a) {
   const open = a.status === 'open';
   const id = a.id;
-  return `<div class="card${a.humanCheck || a.disconnected || a.stalled ? ' off' : ''}" data-id="${id}">
+  const bad = a.humanCheck || a.disconnected || a.stalled;
+  const mode = bad ? ' off' : a.status !== 'open' ? '' : a.resting ? ' rest' : ' play';
+  return `<div class="card${mode}" data-id="${id}">
     <div class="top">
       <span class="grip" draggable="true" title="ลากเพื่อย้ายการ์ด">⠿</span>
       <div><div class="name">${esc(a.name)}</div><div class="meta">${esc(a.profile)} · ${esc(a.url)}</div></div>

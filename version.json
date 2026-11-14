@@ -1,5 +1,5 @@
 {
-  "version": 202611132112,
+  "version": 202611142228,
   "files": {
     "cdp.js": "3eac23fc4c9c9738cb581aa0e1df3c4daf9b6cd96fc91c0725c0b4bfa7514c9b",
     "server.js": "a0be1075aade083e37ae73a021a9c3aa8f09794735d2bd2f0cf23939daecb8f2",
@@ -8,7 +8,7 @@
     "autologin.js": "fb9344053cbfcb355b3b46b30bd263f7dc4cd7fdf17f0a861401ebd738c022db",
     "secret.js": "fd35853cb4734a7833f927c7db9135413157ee3f828021533d27c5b19ecccdf2",
     "updater.js": "304524e9fea5007debd02b6bdde1be28dd6094342004190f54cffaf4d7284bcf",
-    "index.html": "e296a3e135a01dfa02382d6122b43d88e2fabd134d319ee54364b02bb76c620b",
+    "index.html": "1f7d5e1b736ea829c1d6ce21a1e7cd98957724cf76a247e245d6e30ef21ed65f",
     "start.bat": "909607a3a2af03b9996309436c12d15dbaa0e4dbca2c346bae46d3de2fa051e6"
   }
 }
